@@ -237,6 +237,9 @@
   .video-frame video {
     width: 100%; height: 100%;
     object-fit: cover;
+  }
+  /* Only mirror the preview video, not playback */
+  #preview-video {
     transform: scaleX(-1);
   }
   .video-frame .rec-indicator {
@@ -409,6 +412,11 @@
   }
 
   #screen-gallery { overflow-y: auto; padding-top: 80px; }
+  
+  @media (max-width: 768px) {
+    #screen-gallery { padding-top: 200px; }
+  }
+  
   #screen-gallery .gallery-title {
     font-family: 'Cinzel', serif;
     font-size: 22px;
@@ -417,6 +425,92 @@
     letter-spacing: 0.1em;
     margin-bottom: 20px;
   }
+  
+  .gallery-actions {
+    position: fixed;
+    top: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    z-index: 10;
+    background: rgba(253, 248, 240, 0.95);
+    padding: 10px 16px;
+    border-radius: 30px;
+    border: 1px solid var(--gold);
+    box-shadow: 0 4px 16px rgba(122,92,74,0.2);
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 90%;
+  }
+
+  /* Mobile adjustments - fixed below title */
+  @media (max-width: 768px) {
+    .gallery-actions {
+      position: static;
+      transform: none;
+      margin: 0 auto 16px;
+      width: 100%;
+      max-width: 100%;
+      gap: 5px;
+      padding: 8px 12px;
+      border-radius: 12px;
+    }
+    
+    .action-btn {
+      padding: 6px 10px;
+      font-size: 9px;
+      white-space: nowrap;
+    }
+    
+    #selection-count {
+      font-size: 9px;
+      padding: 0 4px;
+      width: 100%;
+      text-align: center;
+      order: 3;
+    }
+  }
+
+  .action-btn {
+    padding: 8px 16px;
+    background: var(--warm-white);
+    border: 1px solid var(--gold);
+    border-radius: 20px;
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--brown);
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+  
+  .action-btn:hover {
+    background: var(--gold-light);
+    transform: translateY(-1px);
+  }
+  
+  .action-btn.danger {
+    border-color: #c0392b;
+    color: #c0392b;
+  }
+  
+  .action-btn.danger:hover {
+    background: #fadbd8;
+  }
+  
+  .action-btn.primary {
+    background: linear-gradient(135deg, var(--rose-dark), var(--brown));
+    color: white;
+    border: none;
+  }
+  
+  .action-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
   .gallery-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -432,7 +526,25 @@
     position: relative;
     aspect-ratio: 4/3;
     cursor: pointer;
+    transition: border-color 0.2s;
   }
+  
+  .gallery-item.selected {
+    border-color: var(--rose-dark);
+    border-width: 3px;
+  }
+  
+  .gallery-item-checkbox {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+    z-index: 2;
+    accent-color: var(--rose-dark);
+  }
+  
   .gallery-item video {
     width: 100%; height: 100%;
     object-fit: cover;
@@ -602,6 +714,18 @@
   }
   .db-status.success { color: #27ae60; }
   .db-status.error { color: #c0392b; }
+  
+  .device-info {
+    position: fixed; bottom: 20px; left: 20px;
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    padding: 6px 10px;
+    background: rgba(255,255,255,0.8);
+    border: 1px solid var(--gold);
+    border-radius: 15px;
+    color: var(--text-light);
+    z-index: 5;
+  }
 </style>
 </head>
 <body>
@@ -738,7 +862,7 @@
     <!-- Left side: Video -->
     <div class="video-section">
       <div class="video-frame">
-        <video id="preview-video" autoplay muted playsinline></video>
+        <video id="preview-video" autoplay muted playsinline webkit-playsinline></video>
         <div class="rec-indicator" id="rec-indicator">
           <div class="rec-dot"></div> REC
         </div>
@@ -832,13 +956,34 @@
 
 <div class="screen" id="screen-gallery">
   <button class="btn-back-gallery" onclick="goTo('screen-welcome')">← Back</button>
+  
+  <div class="gallery-actions" id="gallery-actions">
+    <button class="action-btn" onclick="toggleSelectAll()" id="btn-select-all">Select All</button>
+    <button class="action-btn primary" onclick="downloadSelected()" id="btn-download" disabled>📥 Download Selected</button>
+    <button class="action-btn danger" onclick="deleteSelected()" id="btn-delete" disabled>🗑️ Delete Selected</button>
+    <span style="font-family:'IM Fell English',serif; font-size:12px; color:var(--text-light); padding:0 10px;" id="selection-count">0 selected</span>
+  </div>
+  
   <p class="gallery-title">Messages for the Couple 💕</p>
   <div class="gallery-grid" id="gallery-grid"></div>
 </div>
 
 <div class="db-status" id="db-status" style="display:none">📁 Database Ready</div>
+<div class="device-info" id="device-info"></div>
 
 <script>
+  // ====== DEVICE DETECTION ======
+  const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+  const isIOS = /iPad|iPhone|iPod/.test(userAgent) && !window.MSStream;
+  const isAndroid = /android/i.test(userAgent);
+  const isMobile = isIOS || isAndroid;
+  
+  console.log('Device Detection:');
+  console.log('  iOS:', isIOS);
+  console.log('  Android:', isAndroid);
+  console.log('  Mobile:', isMobile);
+  console.log('  User Agent:', userAgent);
+
   // ====== INDEXEDDB SETUP ======
   let db = null;
   const DB_NAME = 'GuestbookDB';
@@ -847,35 +992,97 @@
   
   // ====== PAGINATION SETUP ======
   let currentPage = 1;
-  const VIDEOS_PER_PAGE = 20; // Adjust based on device performance
+  const VIDEOS_PER_PAGE = 2; // Adjust based on device performance
+  let selectedVideoIds = new Set(); // Track selected video IDs
 
   async function initDB() {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      // First, check if we need to delete old database
+      const checkRequest = indexedDB.open(DB_NAME);
       
-      request.onerror = () => {
-        console.error('DB Error:', request.error);
-        showDBStatus('Database Error', false);
-        reject(request.error);
-      };
-      
-      request.onsuccess = () => {
-        db = request.result;
-        console.log('Database initialized successfully');
-        showDBStatus('Database Ready', true);
-        resolve(db);
-      };
-      
-      request.onupgradeneeded = (event) => {
-        const database = event.target.result;
+      checkRequest.onsuccess = () => {
+        const checkDb = checkRequest.result;
+        const hasStore = checkDb.objectStoreNames.contains(STORE_NAME);
+        checkDb.close();
         
-        if (!database.objectStoreNames.contains(STORE_NAME)) {
-          const store = database.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
-          store.createIndex('timestamp', 'timestamp', { unique: false });
-          console.log('Object Store created');
+        if (!hasStore) {
+          console.log('⚠️ Database exists but missing object store. Deleting and recreating...');
+          const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
+          
+          deleteRequest.onsuccess = () => {
+            console.log('✅ Old database deleted');
+            openDatabase(resolve, reject);
+          };
+          
+          deleteRequest.onerror = () => {
+            console.error('❌ Error deleting database');
+            openDatabase(resolve, reject); // Try anyway
+          };
+        } else {
+          // Database is good, just use it
+          openDatabase(resolve, reject);
         }
       };
+      
+      checkRequest.onerror = () => {
+        // Database doesn't exist, create it
+        openDatabase(resolve, reject);
+      };
     });
+  }
+  
+  function openDatabase(resolve, reject) {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    
+    request.onerror = () => {
+      console.error('❌ DB Error:', request.error);
+      showDBStatus('Database Error', false);
+      reject(request.error);
+    };
+    
+    request.onsuccess = () => {
+      db = request.result;
+      
+      // Verify object store exists
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        console.error('❌ Database opened but object store missing!');
+        showDBStatus('DB Structure Error', false);
+        
+        // Close and delete, then try again
+        db.close();
+        const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
+        deleteRequest.onsuccess = () => {
+          console.log('🔄 Retrying database creation...');
+          location.reload(); // Reload page to start fresh
+        };
+        reject(new Error('Object store missing'));
+        return;
+      }
+      
+      console.log('✅ Database initialized successfully');
+      console.log('   Object stores:', Array.from(db.objectStoreNames).join(', '));
+      showDBStatus('Database Ready', true);
+      resolve(db);
+    };
+    
+    request.onupgradeneeded = (event) => {
+      const database = event.target.result;
+      
+      console.log('🔧 Database upgrade needed');
+      console.log('   Old version:', event.oldVersion);
+      console.log('   New version:', event.newVersion);
+      
+      // Delete old store if it exists
+      if (database.objectStoreNames.contains(STORE_NAME)) {
+        console.log('⚠️ Deleting old object store');
+        database.deleteObjectStore(STORE_NAME);
+      }
+      
+      // Create new store
+      const store = database.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+      store.createIndex('timestamp', 'timestamp', { unique: false });
+      console.log('✅ Object store created:', STORE_NAME);
+    };
   }
 
   function showDBStatus(msg, success) {
@@ -984,9 +1191,10 @@
   let recordedChunks = [];
   let recordedBlob = null;
   let timerInterval = null;
-  let seconds = 60;
+  let seconds = 10;
   let isRecording = false;
   let guestName = '';
+  let canvasStream = null; // For un-mirrored recording
 
   function goTo(screenId) {
     // Start music on first interaction if not already playing
@@ -1014,10 +1222,67 @@
 
   async function initCamera() {
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true });
-      document.getElementById('preview-video').srcObject = stream;
+      console.log('Initializing camera for:', isIOS ? 'iOS' : isAndroid ? 'Android' : 'Desktop');
+      
+      // Platform-specific constraints
+      let constraints = {
+        video: {
+          facingMode: 'user',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      };
+      
+      // iOS-specific adjustments
+      if (isIOS) {
+        constraints.video = {
+          facingMode: 'user',
+          width: { ideal: 640, max: 1280 },
+          height: { ideal: 480, max: 720 }
+        };
+        console.log('Using iOS-optimized settings');
+      }
+      
+      // Android-specific adjustments
+      if (isAndroid) {
+        constraints.video.frameRate = { ideal: 30, max: 30 };
+        console.log('Using Android-optimized settings');
+      }
+      
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      const videoElement = document.getElementById('preview-video');
+      videoElement.srcObject = stream;
+      
+      // Explicit play for mobile devices
+      if (isMobile) {
+        await videoElement.play().catch(err => {
+          console.log('Autoplay blocked, will play on user interaction:', err);
+        });
+      }
+      
+      console.log('✅ Camera started successfully');
+      console.log('Stream settings:', stream.getVideoTracks()[0].getSettings());
+      
     } catch(e) {
-      alert('Camera access is required. Please allow camera permissions and try again.');
+      console.error('❌ Camera error:', e);
+      
+      // Platform-specific error messages
+      let errorMsg = 'Camera access is required. ';
+      
+      if (isIOS) {
+        errorMsg += 'Please:\n1. Go to Settings > Safari > Camera\n2. Set to "Allow"\n3. Reload this page';
+      } else if (isAndroid) {
+        errorMsg += 'Please:\n1. Go to Settings > Apps > Browser\n2. Enable Camera permission\n3. Reload this page';
+      } else {
+        errorMsg += 'Please allow camera permissions and try again.';
+      }
+      
+      alert(errorMsg);
     }
   }
 
@@ -1031,20 +1296,90 @@
     recordedChunks = [];
     isRecording = true;
 
-    let options = {};
-    if (MediaRecorder.isTypeSupported('video/mp4;codecs=h264,aac')) {
-      options = { mimeType: 'video/mp4;codecs=h264,aac' };
-    } else if (MediaRecorder.isTypeSupported('video/mp4')) {
-      options = { mimeType: 'video/mp4' };
-    } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
-      options = { mimeType: 'video/webm;codecs=vp9' };
-    } else if (MediaRecorder.isTypeSupported('video/webm')) {
-      options = { mimeType: 'video/webm' };
+    // Create canvas to flip video horizontally for recording
+    const videoEl = document.getElementById('preview-video');
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Set canvas size to match video
+    canvas.width = videoEl.videoWidth || 1280;
+    canvas.height = videoEl.videoHeight || 720;
+    
+    console.log(`Canvas size: ${canvas.width}x${canvas.height}`);
+    
+    // Draw flipped video to canvas continuously
+    let animationId;
+    function drawFrame() {
+      if (!isRecording) return;
+      
+      ctx.save();
+      // Flip horizontally to un-mirror the mirrored preview
+      ctx.scale(-1, 1);
+      ctx.drawImage(videoEl, -canvas.width, 0, canvas.width, canvas.height);
+      ctx.restore();
+      
+      animationId = requestAnimationFrame(drawFrame);
+    }
+    drawFrame();
+    
+    // Get stream from canvas (this will be un-mirrored)
+    canvasStream = canvas.captureStream(30); // 30 FPS
+    
+    // Add audio from original stream
+    const audioTracks = stream.getAudioTracks();
+    if (audioTracks.length > 0) {
+      canvasStream.addTrack(audioTracks[0]);
     }
 
-    mediaRecorder = new MediaRecorder(stream, options);
+    // Platform-specific codec selection
+    let options = {};
+    
+    if (isIOS) {
+      if (MediaRecorder.isTypeSupported('video/mp4')) {
+        options = { mimeType: 'video/mp4' };
+        console.log('Using video/mp4 for iOS');
+      } else if (MediaRecorder.isTypeSupported('video/mp4;codecs=h264,aac')) {
+        options = { mimeType: 'video/mp4;codecs=h264,aac' };
+        console.log('Using video/mp4 with h264,aac for iOS');
+      }
+    } else if (isAndroid) {
+      if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
+        options = { mimeType: 'video/webm;codecs=vp8,opus' };
+        console.log('Using video/webm with vp8,opus for Android');
+      } else if (MediaRecorder.isTypeSupported('video/webm')) {
+        options = { mimeType: 'video/webm' };
+        console.log('Using video/webm for Android');
+      }
+    } else {
+      if (MediaRecorder.isTypeSupported('video/mp4;codecs=h264,aac')) {
+        options = { mimeType: 'video/mp4;codecs=h264,aac' };
+        console.log('Using video/mp4 with h264,aac for Desktop');
+      } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+        options = { mimeType: 'video/mp4' };
+        console.log('Using video/mp4 for Desktop');
+      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+        options = { mimeType: 'video/webm;codecs=vp9' };
+        console.log('Using video/webm fallback for Desktop');
+      } else if (MediaRecorder.isTypeSupported('video/webm')) {
+        options = { mimeType: 'video/webm' };
+        console.log('Using video/webm basic fallback for Desktop');
+      }
+    }
+
+    console.log('Recording with options:', options);
+    console.log('Recording from canvas stream (un-mirrored)');
+
+    // Record from canvas stream instead of camera stream
+    mediaRecorder = new MediaRecorder(canvasStream, options);
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
-    mediaRecorder.onstop = handleRecordingStop;
+    mediaRecorder.onstop = () => {
+      cancelAnimationFrame(animationId);
+      if (canvasStream) {
+        canvasStream.getTracks().forEach(t => t.stop());
+        canvasStream = null;
+      }
+      handleRecordingStop();
+    };
     mediaRecorder.start(100);
 
     document.getElementById('btn-record').classList.add('recording');
@@ -1053,7 +1388,7 @@
     document.getElementById('timer-ring').style.display = 'block';
     document.getElementById('timer-hint').style.display = 'block';
 
-    seconds = 60;
+    seconds = 10;
     updateTimerDisplay();
     timerInterval = setInterval(() => {
       seconds--;
@@ -1065,7 +1400,7 @@
   function updateTimerDisplay() {
     document.getElementById('timer-text').textContent = seconds;
     const circumference = 213.6;
-    const offset = circumference * (1 - seconds / 60);
+    const offset = circumference * (1 - seconds / 10);
     document.getElementById('timer-circle').style.strokeDashoffset = offset;
   }
 
@@ -1167,8 +1502,11 @@
     
     if (allMessages.length === 0) {
       grid.innerHTML = '<p class="empty-gallery" style="grid-column:1/-1">No messages yet.<br>Be the first to leave one! 🌸</p>';
+      document.getElementById('gallery-actions').style.display = 'none';
       return;
     }
+    
+    document.getElementById('gallery-actions').style.display = 'flex';
     
     // Calculate pagination
     const totalPages = Math.ceil(allMessages.length / VIDEOS_PER_PAGE);
@@ -1188,6 +1526,21 @@
     for (const msg of messages) {
       const div = document.createElement('div');
       div.className = 'gallery-item';
+      div.dataset.videoId = msg.id;
+      
+      if (selectedVideoIds.has(msg.id)) {
+        div.classList.add('selected');
+      }
+      
+      // Checkbox
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.className = 'gallery-item-checkbox';
+      checkbox.checked = selectedVideoIds.has(msg.id);
+      checkbox.onclick = (e) => {
+        e.stopPropagation();
+        toggleVideoSelection(msg.id);
+      };
       
       const video = document.createElement('video');
       
@@ -1209,6 +1562,7 @@
       label.className = 'guest-label';
       label.innerHTML = msg.name + '<br><span style="font-size:10px;opacity:0.7">' + msg.dateStr + '</span>';
       
+      div.appendChild(checkbox);
       div.appendChild(video);
       div.appendChild(label);
       grid.appendChild(div);
@@ -1319,7 +1673,133 @@
       grid.appendChild(paginationDiv);
     }
     
+    updateSelectionUI();
     console.log(`📄 Loaded page ${page}/${totalPages} (${messages.length} videos)`);
+  }
+
+  // ====== GALLERY SELECTION & ACTIONS ======
+  function toggleVideoSelection(videoId) {
+    const item = document.querySelector(`[data-video-id="${videoId}"]`);
+    const checkbox = item.querySelector('.gallery-item-checkbox');
+    
+    if (selectedVideoIds.has(videoId)) {
+      selectedVideoIds.delete(videoId);
+      item.classList.remove('selected');
+      checkbox.checked = false;
+    } else {
+      selectedVideoIds.add(videoId);
+      item.classList.add('selected');
+      checkbox.checked = true;
+    }
+    
+    updateSelectionUI();
+  }
+
+  async function toggleSelectAll() {
+    const allMessages = await getAllMessages();
+    const btn = document.getElementById('btn-select-all');
+    
+    if (selectedVideoIds.size === allMessages.length) {
+      // Deselect all
+      selectedVideoIds.clear();
+      btn.textContent = 'Select All';
+    } else {
+      // Select all
+      selectedVideoIds.clear();
+      allMessages.forEach(msg => selectedVideoIds.add(msg.id));
+      btn.textContent = 'Deselect All';
+    }
+    
+    renderGallery(currentPage);
+  }
+
+  function updateSelectionUI() {
+    const count = selectedVideoIds.size;
+    document.getElementById('selection-count').textContent = `${count} selected`;
+    document.getElementById('btn-download').disabled = count === 0;
+    document.getElementById('btn-delete').disabled = count === 0;
+    
+    getAllMessages().then(messages => {
+      const btn = document.getElementById('btn-select-all');
+      if (btn) {
+        btn.textContent = count === messages.length ? 'Deselect All' : 'Select All';
+      }
+    });
+  }
+
+  async function downloadSelected() {
+    if (selectedVideoIds.size === 0) return;
+    
+    const allMessages = await getAllMessages();
+    const selectedMessages = allMessages.filter(msg => selectedVideoIds.has(msg.id));
+    
+    if (!confirm(`Download ${selectedMessages.length} video(s)?`)) return;
+    
+    console.log(`📥 Starting download of ${selectedMessages.length} videos...`);
+    
+    for (let i = 0; i < selectedMessages.length; i++) {
+      const msg = selectedMessages[i];
+      const url = URL.createObjectURL(msg.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const ext = msg.mimeType.includes('mp4') ? 'mp4' : 'webm';
+      
+      // Format timestamp from ISO string (e.g., "2026-06-22T15:30:45.123Z")
+      const timestamp = new Date(msg.timestamp);
+      const timeStr = timestamp.toLocaleTimeString('en-MY', { 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit',
+        hour12: false 
+      }).replace(/:/g, '-');
+      
+      a.download = `${i + 1}_${msg.name.replace(/ /g, '_')}_${msg.dateStr.replace(/ /g, '_')}_${timeStr}.${ext}`;
+      
+      // Stagger downloads to avoid browser blocking
+      setTimeout(() => {
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        console.log(`📥 Downloaded: ${a.download}`);
+      }, i * 500);
+    }
+    
+    alert(`Started downloading ${selectedMessages.length} video(s).\nCheck your Downloads folder.`);
+  }
+
+  async function deleteSelected() {
+    if (selectedVideoIds.size === 0) return;
+    
+    const allMessages = await getAllMessages();
+    const selectedMessages = allMessages.filter(msg => selectedVideoIds.has(msg.id));
+    
+    const confirmMsg = `Delete ${selectedMessages.length} video(s)?\n\nThis cannot be undone!\n\nDeleting:\n${selectedMessages.slice(0, 5).map(m => '- ' + m.name).join('\n')}${selectedMessages.length > 5 ? '\n... and ' + (selectedMessages.length - 5) + ' more' : ''}`;
+    
+    if (!confirm(confirmMsg)) return;
+    
+    console.log(`🗑️ Deleting ${selectedMessages.length} videos...`);
+    
+    return new Promise((resolve) => {
+      const transaction = db.transaction([STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      
+      let deleted = 0;
+      selectedMessages.forEach(msg => {
+        const request = store.delete(msg.id);
+        request.onsuccess = () => {
+          deleted++;
+          console.log(`🗑️ Deleted: ${msg.name}`);
+          
+          if (deleted === selectedMessages.length) {
+            selectedVideoIds.clear();
+            renderGallery(currentPage);
+            alert(`Successfully deleted ${deleted} video(s)`);
+            resolve(true);
+          }
+        };
+      });
+    });
   }
 
   // ====== MUSIC CONTROL ======
@@ -1437,6 +1917,16 @@
     console.log('🔄 Page loaded, initializing database...');
     await initDB();
     logDatabaseStatus();
+    
+    // Display device info
+    const deviceInfo = document.getElementById('device-info');
+    let deviceType = 'Desktop';
+    if (isIOS) deviceType = '📱 iOS';
+    else if (isAndroid) deviceType = '📱 Android';
+    else deviceType = '💻 Desktop';
+    
+    deviceInfo.textContent = deviceType;
+    deviceInfo.title = userAgent;
   });
 
   // ====== DEBUG FUNCTIONS ======
@@ -1500,6 +1990,28 @@
         location.reload();
       };
     },
+    resetDatabase: async () => {
+      if (!confirm('⚠️ RESET DATABASE? This will delete and recreate it.')) return;
+      
+      console.log('🔄 Deleting database...');
+      if (db) {
+        db.close();
+        db = null;
+      }
+      
+      const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
+      
+      deleteRequest.onsuccess = () => {
+        console.log('✅ Database deleted');
+        console.log('🔄 Reloading page...');
+        setTimeout(() => location.reload(), 500);
+      };
+      
+      deleteRequest.onerror = () => {
+        console.error('❌ Error deleting database');
+        location.reload();
+      };
+    },
     exportAllVideos: async () => {
       const messages = await getAllMessages();
       console.log(`📥 Starting export of ${messages.length} videos...`);
@@ -1510,7 +2022,17 @@
         const a = document.createElement('a');
         a.href = url;
         const ext = msg.mimeType.includes('mp4') ? 'mp4' : 'webm';
-        a.download = `${i + 1}_${msg.name.replace(/ /g, '_')}_${msg.dateStr.replace(/ /g, '_')}.${ext}`;
+        
+        // Format timestamp
+        const timestamp = new Date(msg.timestamp);
+        const timeStr = timestamp.toLocaleTimeString('en-MY', { 
+          hour: '2-digit', 
+          minute: '2-digit', 
+          second: '2-digit',
+          hour12: false 
+        }).replace(/:/g, '-');
+        
+        a.download = `${i + 1}_${msg.name.replace(/ /g, '_')}_${msg.dateStr.replace(/ /g, '_')}_${timeStr}.${ext}`;
         
         // Stagger downloads
         setTimeout(() => {
@@ -1526,8 +2048,11 @@
 
   // Log availability
   console.log('💡 For debugging, open console and use:');
-  console.log('   dbDebug.status()       - Show database status');
-  console.log('   dbDebug.showAllData()  - List all messages');
+  console.log('   dbDebug.status()         - Show database status');
+  console.log('   dbDebug.showAllData()    - List all messages');
+  console.log('   dbDebug.resetDatabase()  - Delete & recreate database (FIX ERRORS)');
+  console.log('   dbDebug.exportAllVideos() - Download all videos');
+  console.log('   dbDebug.clearDatabase()  - Wipe database');
   console.log('   dbDebug.exportAllVideos() - Download all videos');
   console.log('   dbDebug.clearDatabase() - Wipe database');
 </script>
